@@ -1,3 +1,5 @@
+from itertools import chain
+
 import numpy as np
 from scipy import sparse
 
@@ -52,6 +54,16 @@ def _svec_psd_dual_arg(
     weights = np.where(rows == cols, 1.0, 0.5)
     weights = np.tile(weights, num_cones)
     return multiply(weights, arg)
+
+
+def _split_cone_args(block: Expression, args: list[Expression]) -> list[Expression]:
+    """Split stuffed cone rows back into the source argument shapes."""
+    parts = []
+    offset = 0
+    for arg in args:
+        parts.append(reshape(block[offset:offset + arg.size], arg.shape, order="F"))
+        offset += arg.size
+    return parts
 
 
 def suppfunc_canon(expr, args, solver_context: SolverInfo | None = None):
@@ -118,5 +130,8 @@ def suppfunc_canon(expr, args, solver_context: SolverInfo | None = None):
         # Map it to CVXPY's primal exponential cone convention.
         ec = ExpCone(-curr_v, -curr_u, np.exp(1) * curr_w)
         local_cons.append(ec)
+    for rows, source_con in chain(K_sels["p3d"], K_sels["pnd"]):
+        local_cons.append(source_con._dual_cone(
+            *_split_cone_args(eta[rows], source_con.args)))
     epigraph = b @ eta
     return epigraph, local_cons

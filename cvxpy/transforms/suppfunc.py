@@ -7,6 +7,7 @@ from cvxpy.atoms.suppfunc import SuppFuncAtom
 from cvxpy.constraints.constraint import Constraint
 from cvxpy.constraints.exponential import ExpCone
 from cvxpy.constraints.finite_set import FiniteSet
+from cvxpy.constraints.power import PowCone3D, PowConeND
 from cvxpy.constraints.psd import PSD, SvecPSD
 from cvxpy.constraints.second_order import SOC
 from cvxpy.error import SolverError
@@ -211,17 +212,14 @@ def _cone_selectors(
         arrays, or lists of numpy arrays. The numpy arrays give row indices
         of the affine operator (A, b) before solver-specific formatting.
     """
-    if K.p3d or K.pnd:
-        msg = "SuppFunc doesn't yet support feasible sets represented \n"
-        msg += "with power cone constraints."
-        raise NotImplementedError(msg)
-        # TODO: implement
     idx = K.zero
     nonneg_idxs = np.arange(idx, idx + K.nonneg)
     idx += K.nonneg
     soc_idxs = []
     psd_idxs = []
     exp_idxs = []
+    p3d_idxs = []
+    pnd_idxs = []
     for con in constraints:
         match con:
             case SOC():
@@ -241,11 +239,19 @@ def _cone_selectors(
                     np.arange(idx, idx + con.size).reshape(3, cone_count).T.ravel()
                 )
                 idx += con.size
+            case PowCone3D():
+                p3d_idxs.append((np.arange(idx, idx + con.size), con))
+                idx += con.size
+            case PowConeND():
+                pnd_idxs.append((np.arange(idx, idx + con.size), con))
+                idx += con.size
     selectors = {
         'nonneg': nonneg_idxs,
         'exp': np.asarray(exp_idxs, dtype=int),
         'soc': soc_idxs,
-        'psd': psd_idxs
+        'psd': psd_idxs,
+        'p3d': p3d_idxs,
+        'pnd': pnd_idxs,
     }
     return selectors
 

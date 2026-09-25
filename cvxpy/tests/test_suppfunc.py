@@ -290,6 +290,61 @@ class TestSupportFunctions(BaseTest):
         with pytest.warns(CvxpyDeprecationWarning, match="scs_psdvec_to_psdmat"):
             scs_psdvec_to_psdmat(vec, np.arange(3))
 
+    def test_power_cone_3d(self) -> None:
+        x = cp.Variable(3)
+        sigma = cp.suppfunc(x, [
+            cp.PowCone3D(x[0], x[1], x[2], 0.5),
+            x[0] + x[1] <= 1,
+        ])
+        epigraph = cp.Variable()
+        prob = cp.Problem(
+            cp.Minimize(epigraph), [sigma([0, 0, 1]) <= epigraph])
+
+        prob.solve(solver=cp.CLARABEL)
+        self.assertAlmostEqual(epigraph.value, 0.5, places=6)
+
+    def test_batched_power_cone_3d_row_order(self) -> None:
+        alpha = np.array([0.2, 0.6])
+        budgets = np.array([1.0, 2.0])
+        x = cp.Variable((3, 2))
+        sigma = cp.suppfunc(x, [
+            cp.PowCone3D(x[0], x[1], x[2], alpha),
+            x[0] + x[1] <= budgets,
+        ])
+        direction = np.zeros(x.shape)
+        direction[2] = 1
+        epigraph = cp.Variable()
+        prob = cp.Problem(
+            cp.Minimize(epigraph), [sigma(direction) <= epigraph])
+
+        prob.solve(solver=cp.CLARABEL)
+        expected = np.sum(budgets * alpha**alpha * (1 - alpha)**(1 - alpha))
+        self.assertLess(abs(epigraph.value - expected), 1e-6)
+
+    def test_power_cone_nd_across_solvers(self) -> None:
+        x = cp.Variable(4)
+        sigma = cp.suppfunc(x, [
+            cp.PowConeND(x[:3], x[3], np.ones(3) / 3),
+            cp.sum(x[:3]) <= 1,
+        ])
+        epigraph = cp.Variable()
+        prob = cp.Problem(
+            cp.Minimize(epigraph), [sigma([0, 0, 0, 1]) <= epigraph])
+
+        for solver in [cp.CLARABEL, cp.SCS]:
+            kwargs = {"eps": 1e-7} if solver == cp.SCS else {}
+            prob.solve(solver=solver, **kwargs)
+            self.assertAlmostEqual(epigraph.value, 1 / 3, places=5)
+
+    def test_suppfunc_with_exact_power_atom(self) -> None:
+        x = cp.Variable()
+        sigma = cp.suppfunc(x, [cp.power(x, 1.5, approx=False) <= 1])
+        epigraph = cp.Variable()
+        prob = cp.Problem(cp.Minimize(epigraph), [sigma(1) <= epigraph])
+
+        prob.solve(solver=cp.CLARABEL)
+        self.assertAlmostEqual(epigraph.value, 1.0, places=6)
+
     def test_largest_singvalue(self) -> None:
         np.random.seed(3)
         rows, cols = 3, 4
